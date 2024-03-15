@@ -4,11 +4,49 @@ import numpy as np
 from datetime import timedelta
 import csv 
 
-# Expand a list of files with detections to just a flat list of detections
-def expand_to_valid_dets(all_f_dets, min_det_conf=0.8):
+def get_opt_spec_bn_threshs(ds_short_name):
+    annotated_xlsx_path = os.path.join('precision_labelled_data', '{}_labelled_clips.xlsx'.format(ds_short_name))
+    bn_thresh_vals = np.linspace(0.8, 0.99, 20)
+
+    _, all_specs = get_spec_precisions(annotated_xlsx_path, bn_thresh_vals[0])
+    all_specs_precs = np.ones((len(bn_thresh_vals), len(all_specs))) * -1
+
+    for bn_thresh_ix, bn_thresh in enumerate(bn_thresh_vals):
+        bars, labs = get_spec_precisions(annotated_xlsx_path, bn_thresh)
+        prop_right = bars[:,0]
+        
+        for spec_ix, spec in enumerate(labs):
+            spec_match_ix = np.where((all_specs == spec))[0]
+            all_specs_precs[bn_thresh_ix, spec_match_ix] = prop_right[spec_ix]
+
+    opt_spec_bn_threshs = {}
+    prec_at_opt_threshs = []
+
+    for spec_ix, spec in enumerate(all_specs):
+        spec_precs = all_specs_precs[:, spec_ix]
+        best_thresh = bn_thresh_vals[np.argmax(spec_precs)]
+        prec_at_opt_threshs.append(max(spec_precs))
+        opt_spec_bn_threshs[spec] = np.round(best_thresh, 3)
+    
+    return opt_spec_bn_threshs, np.asarray(prec_at_opt_threshs)
+
+
+def get_datasets_dict():
+    return [{'short_name': 'norway', 'name': 'Norway', 'mins_per_f': 5},
+            {'short_name': 'taiwan', 'name': 'Taiwan'},
+            {'short_name': 'costa-rica', 'name': 'Costa Rica', 'mins_per_f': 1},
+            {'short_name': 'brazil', 'name': 'Brazil', 'mins_per_f': 1}]
+
+
+def expand_to_valid_dets(all_f_dets, bn_conf_thresh=0.80):
     all_valid_dets = []
     for f_dets in all_f_dets:
         for d in f_dets['dets']:
+            if isinstance(bn_conf_thresh, dict):
+                if d['common_name'] not in bn_conf_thresh.keys(): continue
+                else: min_det_conf = bn_conf_thresh[d['common_name']]
+            else: min_det_conf = bn_conf_thresh
+
             if d['confidence'] >= min_det_conf:
 
                 d['site'] = f_dets['site']
@@ -22,7 +60,20 @@ def expand_to_valid_dets(all_f_dets, min_det_conf=0.8):
 
     return np.asarray(all_valid_dets)
 
-# Load habitat information for Costa Rica data from an auxiliary raw data file
+
+def convert_norway_site_to_lat_group(lat, site):
+    lat = float(lat)
+    thresh_south = 61
+    thresh_north = 65
+
+    if lat < thresh_south:
+        return 'South'
+    if lat > thresh_south and lat < thresh_north:
+        return 'Central'
+    if lat > thresh_north:
+        return 'North'
+
+
 def get_costarica_site_info(all_f_dets):
     all_fd_site_names = np.asarray([fd['site'] for fd in all_f_dets])
     unq_site_names = np.unique(all_fd_site_names)
@@ -35,7 +86,7 @@ def get_costarica_site_info(all_f_dets):
 
     all_site_loc_site_strs = np.asarray([s['loc_site_str'] for s in unq_sites])
 
-    site_info_csv_path = os.path.join('auxiliary_data', 'costa_rica_site_info.csv')
+    site_info_csv_path = os.path.join('raw_data_costa-rica', 'costa_rica_site_info.csv')
     with open(site_info_csv_path, newline='') as csvfile:
         rdr = csv.reader(csvfile, delimiter=',')
         for row_ix, row in enumerate(rdr):
@@ -71,19 +122,21 @@ def get_costarica_site_info(all_f_dets):
     
     return w_habitat_sites
 
-# Get precisions per species from file containing results of annotated subset of detections
-def get_spec_precisions(annotated_xlsx_path):
-    # Read data into pandas dataframe
+def get_spec_precisions(annotated_xlsx_path, bn_thresh=0.8):
     annotated_xlsx = os.path.join(annotated_xlsx_path)
+
     df = pd.read_excel(annotated_xlsx, index_col=None)
     df = df.where(pd.notnull(df), '')
+    
+    bn_confs = np.asarray(df['Confidence'].to_list())
+    over_thresh_ixs = np.where((bn_confs >= bn_thresh))[0]
+    df = df.loc[over_thresh_ixs]
 
     all_specs = np.asarray(df['Common name'].to_list())
     all_decisions = np.asarray(df['BirdNET correct?'].to_list())
 
     unq_specs = np.unique(all_specs)
 
-    # For each species measure the proportion that was correct, incorrect, or unsure
     labs = []
     bars = []
     for spec in unq_specs:
