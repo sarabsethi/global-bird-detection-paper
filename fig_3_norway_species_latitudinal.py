@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 def do_plot(chosen_spec = 'Willow Warbler'):
     ds = {'short_name': 'norway', 'name': 'Norway', 'mins_per_f': 5}
 
-    spec_opt_threshs, spec_precisions = get_opt_spec_bn_threshs(ds['short_name'])
+    spec_opt_threshs, _, _, _ = get_opt_spec_bn_threshs(ds['short_name'])
     bn_thresh = spec_opt_threshs[chosen_spec]
     
     start_dt = datetime(year=2022, month=4, day=30)
@@ -35,8 +35,8 @@ def do_plot(chosen_spec = 'Willow Warbler'):
     unq_site_lats = all_det_sites_lats[unq_site_ixs]
     sort_ix = np.argsort(unq_site_lats)
     unq_sites = unq_sites[sort_ix][::-1]
-    #unq_sites = unq_sites[[1,0,2]]
-
+    unq_site_lats = unq_site_lats[sort_ix][::-1]
+    
     unq_days = []
     day_dt = start_dt
     while day_dt <= end_dt:
@@ -74,14 +74,16 @@ def do_plot(chosen_spec = 'Willow Warbler'):
 
     plt.matshow(norm_dets_mat, aspect='auto', fignum=0, cmap='Blues')
     plt.colorbar(label='Daily vocal activity', pad=0.022, fraction=0.07)
-    plt.ylabel('Region\n(ordered by latitude)')
+    plt.ylabel('Latitude')
     plt.xlabel('Date')
     plt.title('Norway: {} migration'.format(chosen_spec))
-    plt.yticks(range(len(unq_sites)), unq_sites)
+    
+    #plt.yticks(range(len(unq_sites)), unq_sites)
+    plt.yticks(range(len(unq_site_lats)), [np.round(float(lat), 3) for lat in unq_site_lats])
 
     unq_days_labs = []
-    for d_ix, d in enumerate(unq_days):
-        if d_ix%8 == 0: unq_days_labs.append(d.strftime('%d/%m/%Y'))
+    for d in unq_days:
+        if d.day == 1 or d.day==15: unq_days_labs.append(d.strftime('%d %B %Y'))
         else: unq_days_labs.append('')
 
     plt.xticks(range(len(unq_days_labs)), unq_days_labs)

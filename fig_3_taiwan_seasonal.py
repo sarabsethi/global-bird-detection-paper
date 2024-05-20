@@ -6,8 +6,9 @@ from utils import expand_to_valid_dets, get_opt_spec_bn_threshs
 from scipy.spatial.distance import pdist
 from scipy.cluster.hierarchy import linkage, dendrogram
 from scipy.signal import convolve2d
+from datetime import datetime
 
-def do_plot(spec_prec_thresh=1, force_compute=False):
+def do_plot(spec_prec_thresh=0.9, min_dets_per_spec=20, force_compute=False):
     ds = {'short_name': 'taiwan', 'name': 'Taiwan', 'mins_per_f': 5}
 
     temp_fig_data_path = os.path.join('temp_fig_data', 'fig3_{}.pickle'.format(ds['short_name']))
@@ -17,9 +18,9 @@ def do_plot(spec_prec_thresh=1, force_compute=False):
         comb_data_dir = 'combined_detection_data'
         comb_dets_path = os.path.join(comb_data_dir, '{}_combined_dets_0-8_thresh.pickle'.format(ds['short_name']))
 
-        spec_opt_threshs, spec_precisions = get_opt_spec_bn_threshs(ds['short_name'])
+        spec_opt_threshs, spec_precisions, _, num_valid_spec_dets = get_opt_spec_bn_threshs(ds['short_name'])
         specs = np.asarray(list(spec_opt_threshs.keys()))
-        allowed_specs = specs[np.where((spec_precisions >= spec_prec_thresh))[0]]
+        allowed_specs = specs[(spec_precisions >= spec_prec_thresh) & (num_valid_spec_dets >= min_dets_per_spec)]
 
         print('Loading detections')
         with open(comb_dets_path, 'rb') as f_handle:
@@ -77,13 +78,20 @@ def do_plot(spec_prec_thresh=1, force_compute=False):
 
     unq_days_labs = []
     tick_ixs = []
-    last_yr_lab = 0
     for d_ix, d in enumerate(unq_days):
-        if d[-2:] in ['01']: 
+        dt = datetime.strptime(d, '%Y-%m-%d')
+        if dt.day == 1 and dt.month == 1:
             tick_ixs.append(d_ix)
-            unq_days_labs.append('/'.join(d[2:7].split('-')[::-1]))
+            unq_days_labs.append(dt.strftime('%b\n%Y'))
+        elif dt.day == 1:
+            tick_ixs.append(d_ix)
+            unq_days_labs.append(dt.strftime('%b'))
 
-    plt.xticks(tick_ixs, unq_days_labs, ha='center')
+        if dt.day == 1 and dt.month == 1 and dt.year == 2020:
+            new_year_line_ix = d_ix
+
+    plt.xticks(tick_ixs, unq_days_labs, ha='center', rotation=0)
+    plt.axvline(x=new_year_line_ix, c='k', ls='--')
 
     plt.gca().tick_params(bottom=True, top=False, left=True, right=False)
     plt.gca().tick_params(labelbottom=True, labeltop=False, labelleft=True, labelright=False)

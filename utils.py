@@ -3,8 +3,14 @@ import pandas as pd
 import numpy as np 
 from datetime import timedelta
 import csv 
+import pickle 
 
-def get_opt_spec_bn_threshs(ds_short_name):
+def get_opt_spec_bn_threshs(ds_short_name, target_prec=0.9):
+    comb_data_dir = 'combined_detection_data'
+    comb_dets_path = os.path.join(comb_data_dir, '{}_combined_dets_0-8_thresh.pickle'.format(ds_short_name))
+    with open(comb_dets_path, 'rb') as f_handle:
+        all_f_dets = pickle.load(f_handle)
+
     annotated_xlsx_path = os.path.join('precision_labelled_data', '{}_labelled_clips.xlsx'.format(ds_short_name))
     bn_thresh_vals = np.linspace(0.8, 0.99, 20)
 
@@ -24,11 +30,33 @@ def get_opt_spec_bn_threshs(ds_short_name):
 
     for spec_ix, spec in enumerate(all_specs):
         spec_precs = all_specs_precs[:, spec_ix]
-        best_thresh = bn_thresh_vals[np.argmax(spec_precs)]
-        prec_at_opt_threshs.append(max(spec_precs))
-        opt_spec_bn_threshs[spec] = np.round(best_thresh, 3)
+
+        if max(spec_precs) > target_prec:
+            first_over_thresh_ix = np.where((spec_precs >= target_prec))[0][0]
+            prec_at_opt_threshs.append(spec_precs[first_over_thresh_ix])
+            opt_spec_bn_threshs[spec] = np.round(bn_thresh_vals[first_over_thresh_ix], 3)
+        else:
+            best_thresh = bn_thresh_vals[np.argmax(spec_precs)]
+            prec_at_opt_threshs.append(max(spec_precs))
+            opt_spec_bn_threshs[spec] = np.round(best_thresh, 3)
     
-    return opt_spec_bn_threshs, np.asarray(prec_at_opt_threshs)
+    all_dets = expand_to_valid_dets(all_f_dets, 0.8)
+    all_valid_dets = expand_to_valid_dets(all_f_dets, opt_spec_bn_threshs)
+
+    all_det_specs = np.asarray([d['common_name'] for d in all_dets])
+    all_valid_det_specs = np.asarray([d['common_name'] for d in all_valid_dets])
+    
+    num_spec_dets = []
+    num_valid_spec_dets = []
+    for spec_ix, spec in enumerate(all_specs):
+        num_spec_dets.append(len(np.where((all_det_specs == spec))[0]))
+        num_valid_spec_dets.append(len(np.where((all_valid_det_specs == spec))[0]))
+
+    prec_at_opt_threshs = np.asarray(prec_at_opt_threshs)
+    num_spec_dets = np.asarray(num_spec_dets)
+    num_valid_spec_dets = np.asarray(num_valid_spec_dets)
+
+    return opt_spec_bn_threshs, prec_at_opt_threshs, num_spec_dets, num_valid_spec_dets
 
 
 def get_datasets_dict():
@@ -86,7 +114,7 @@ def get_costarica_site_info(all_f_dets):
 
     all_site_loc_site_strs = np.asarray([s['loc_site_str'] for s in unq_sites])
 
-    site_info_csv_path = os.path.join('raw_data_costa-rica', 'costa_rica_site_info.csv')
+    site_info_csv_path = os.path.join('auxiliary_data', 'costa_rica_site_info.csv')
     with open(site_info_csv_path, newline='') as csvfile:
         rdr = csv.reader(csvfile, delimiter=',')
         for row_ix, row in enumerate(rdr):

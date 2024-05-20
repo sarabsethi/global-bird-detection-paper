@@ -6,11 +6,11 @@ from utils import expand_to_valid_dets, get_opt_spec_bn_threshs
 import pytz
 from suntime import Sun
 
-def do_plot(spec_prec_thresh=1):
+def do_plot(spec_prec_thresh=0.9, min_dets_per_spec=20):
 
-    spec_opt_threshs, spec_precisions = get_opt_spec_bn_threshs('brazil')
+    spec_opt_threshs, spec_precisions, _, num_valid_spec_dets = get_opt_spec_bn_threshs('brazil')
     specs = np.asarray(list(spec_opt_threshs.keys()))
-    allowed_specs = specs[np.where((spec_precisions >= spec_prec_thresh))[0]]
+    allowed_specs = specs[(spec_precisions >= spec_prec_thresh) & (num_valid_spec_dets >= min_dets_per_spec)]
 
     ds = {'short_name': 'brazil', 'name': 'Brazil', 'mins_per_f': 1}
 
@@ -45,21 +45,24 @@ def do_plot(spec_prec_thresh=1):
 
     plt_data = []
     max_activity_hrs = []
-    for spec_ix, spec in enumerate(allowed_specs):
+    plt_specs = []
+    for spec in allowed_specs:
         match_det_ixs = np.where((all_det_specs == spec))[0]
         match_det_hrs = all_det_hrs_local_tz[match_det_ixs]
 
-        hist_data, hist_bins = np.histogram(np.asarray(match_det_hrs), np.asarray(range(25)))
+        hist_data,_ = np.histogram(np.asarray(match_det_hrs), np.asarray(range(25)))
         hist_data = hist_data / np.max(hist_data)
 
         max_activity_hrs.append(np.argmax(hist_data))
         plt_data.append(hist_data)
+        plt_specs.append(spec)
 
+    plt_specs = np.asarray(plt_specs)
     plt_data = np.asarray(plt_data)
 
     sort_ix = np.argsort(max_activity_hrs)[::-1]
 
-    allowed_specs = allowed_specs[sort_ix]
+    plt_specs = plt_specs[sort_ix]
     plt_data = plt_data[sort_ix, :]
 
     [plt.gca().axvline(x, alpha=0.1, c='k', ls='--', linewidth='1') for x in range(24)]
@@ -78,7 +81,7 @@ def do_plot(spec_prec_thresh=1):
         plt.plot(range(24), plt_d + y_ticks[plt_ix], label=lab, c='k')
 
     plt.legend(framealpha=1, loc='best')
-    plt.yticks(y_ticks, allowed_specs)
+    plt.yticks(y_ticks, plt_specs)
     plt.xticks([0, 6, 12, 18, 23])
     plt.ylabel('Species\nHourly vocal activity')
     plt.xlabel('Hour of day')

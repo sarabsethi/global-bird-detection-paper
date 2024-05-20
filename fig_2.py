@@ -1,12 +1,16 @@
 import os
-from utils import get_datasets_dict, get_opt_spec_bn_threshs
+from utils import get_datasets_dict, get_opt_spec_bn_threshs, expand_to_valid_dets
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy import stats
 
 all_datasets = get_datasets_dict()
 
-fig, axs = plt.subplots(1, 4, figsize=(25,14))
+comb_data_dir = 'combined_detection_data'
+TARGET_PREC = 0.90
+MIN_DETS_PER_SPEC = 20
 
+fig, axs = plt.subplots(1, 4, figsize=(25,14))
 axs = np.ravel(axs)
 
 for ds_ix, ds in enumerate(all_datasets):
@@ -14,20 +18,37 @@ for ds_ix, ds in enumerate(all_datasets):
 
     annotated_xlsx_path = os.path.join('precision_labelled_data', '{}_labelled_clips.xlsx'.format(ds['short_name']))
 
-    bn_threshs, spec_precs = get_opt_spec_bn_threshs(ds['short_name'])
+    bn_threshs, spec_precs, num_spec_dets, num_valid_spec_dets = get_opt_spec_bn_threshs(ds['short_name'], TARGET_PREC)
     specs = np.asarray(list(bn_threshs.keys()))
-
-    print('{}: {} total; 100% {} specs; >80% {} specs; 0% {}'.format(ds['name'], len(specs), len(np.where(spec_precs==1)[0]), len(np.where(spec_precs>=0.8)[0]), len(np.where(spec_precs==0)[0])))
+    
+    print('Corr between calibrated thresholds and precisions: {}'.
+          format(stats.pearsonr(list(bn_threshs.values()), spec_precs)))
 
     # First sort species by precisions then alphabetically
     spec_ord = np.lexsort((np.argsort(specs)[::-1], spec_precs))
     specs = specs[spec_ord]
     spec_precs = spec_precs[spec_ord]
+    num_valid_spec_dets = num_valid_spec_dets[spec_ord]
+
+    spec_labs = []
+    num_low_samp_sizes = 0
+    for sp_ix, sp in enumerate(specs): 
+        #print('{}: {}'.format(sp, num_valid_spec_dets[sp_ix]))
+        if num_valid_spec_dets[sp_ix] < MIN_DETS_PER_SPEC: 
+            spec_labs.append('{}*'.format(sp))
+            num_low_samp_sizes += 1
+        else:
+            spec_labs.append(sp)
+        
+    #print(['{}: {}'.format(sp, sp_pr) for sp, sp_pr in zip(specs, spec_precs)])
+
+    print('{}: {} total; >{}% {} specs ({} < {} dets); 0% {}'.format(ds['name'], len(specs), int(TARGET_PREC*100),
+                len(np.where(spec_precs>=TARGET_PREC)[0]), num_low_samp_sizes, MIN_DETS_PER_SPEC, len(np.where(spec_precs==0)[0])))
 
     # Plot bars showing true and false positive proportions
     w = 0.5
-    plt.gca().barh(specs, spec_precs, label='True pos. ($T_{p}$)', height=w, color='green')
-    plt.gca().barh(specs, 1-spec_precs, left=spec_precs, label='False pos. ($F_{p}$)', height=w, color='red')
+    plt.gca().barh(spec_labs, spec_precs, label='True pos. ($T_{p}$)', height=w, color='green')
+    plt.gca().barh(spec_labs, 1-spec_precs, left=spec_precs, label='False pos. ($F_{p}$)', height=w, color='red')
     
     if ds_ix == 0:
         plt.legend(loc='upper left', framealpha=0.95, fontsize=15)
@@ -41,7 +62,7 @@ for ds_ix, ds in enumerate(all_datasets):
     plt.gca().tick_params(axis='y', labelsize=16)
     plt.gca().tick_params(axis='x', labelsize=16)
 
-    plt.ylim([-0.5, len(specs)])
+    plt.ylim([-0.5, len(spec_labs)])
     plt.gca().spines['top'].set_visible(False)
     plt.gca().spines['right'].set_visible(False)
     plt.title(ds['name'], fontsize=24)
